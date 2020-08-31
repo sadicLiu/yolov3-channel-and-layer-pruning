@@ -1,14 +1,9 @@
-from models import *
-from utils.utils import *
-import numpy as np
-from copy import deepcopy
-from test import test
-from terminaltables import AsciiTable
-import time
-from utils.prune_utils import *
 import argparse
+import time
 
-
+from models import *
+from test import test
+from utils.prune_utils import *
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -29,20 +24,17 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(opt.weights, map_location=device)['model'])
     else:
         _ = load_darknet_weights(model, opt.weights)
-    print('\nloaded weights from ',opt.weights)
+    print('\nloaded weights from ', opt.weights)
 
-
-    eval_model = lambda model:test(model=model,cfg=opt.cfg, data=opt.data, batch_size=16, img_size=img_size)
-    obtain_num_parameters = lambda model:sum([param.nelement() for param in model.parameters()])
+    eval_model = lambda model: test(model=model, cfg=opt.cfg, data=opt.data, batch_size=16, img_size=img_size)
+    obtain_num_parameters = lambda model: sum([param.nelement() for param in model.parameters()])
 
     print("\nlet's test the original model first:")
     with torch.no_grad():
         origin_model_metric = eval_model(model)
     origin_nparameters = obtain_num_parameters(model)
 
-    CBL_idx, Conv_idx, prune_idx, _, _= parse_module_defs2(model.module_defs)
-
-
+    CBL_idx, Conv_idx, prune_idx, _, _ = parse_module_defs2(model.module_defs)
 
     bn_weights = gather_bn_weights(model.module_list, prune_idx)
 
@@ -54,9 +46,7 @@ if __name__ == '__main__':
     print(f'Global Threshold should be less than {thresh:.4f}.')
 
 
-
-
-    #%%
+    # %%
     def obtain_filters_mask(model, thre, CBL_idx, prune_idx):
 
         pruned = 0
@@ -68,19 +58,19 @@ if __name__ == '__main__':
             if idx in prune_idx:
 
                 weight_copy = bn_module.weight.data.abs().clone()
-                
-                channels = weight_copy.shape[0] #
+
+                channels = weight_copy.shape[0]  #
                 min_channel_num = int(channels * opt.layer_keep) if int(channels * opt.layer_keep) > 0 else 1
                 mask = weight_copy.gt(thresh).float()
-                
-                if int(torch.sum(mask)) < min_channel_num: 
-                    _, sorted_index_weights = torch.sort(weight_copy,descending=True)
-                    mask[sorted_index_weights[:min_channel_num]]=1. 
+
+                if int(torch.sum(mask)) < min_channel_num:
+                    _, sorted_index_weights = torch.sort(weight_copy, descending=True)
+                    mask[sorted_index_weights[:min_channel_num]] = 1.
                 remain = int(mask.sum())
                 pruned = pruned + mask.shape[0] - remain
 
                 print(f'layer index: {idx:>3d} \t total channel: {mask.shape[0]:>4d} \t '
-                        f'remaining channel: {remain:>4d}')
+                      f'remaining channel: {remain:>4d}')
             else:
                 mask = torch.ones(bn_module.weight.data.shape)
                 remain = mask.shape[0]
@@ -94,6 +84,7 @@ if __name__ == '__main__':
 
         return num_filters, filters_mask
 
+
     num_filters, filters_mask = obtain_filters_mask(model, thresh, CBL_idx, prune_idx)
     CBLidx2mask = {idx: mask for idx, mask in zip(CBL_idx, filters_mask)}
     CBLidx2filters = {idx: filters for idx, filters in zip(CBL_idx, num_filters)}
@@ -104,7 +95,6 @@ if __name__ == '__main__':
 
     print('merge the mask of layers connected to shortcut!')
     merge_mask(model, CBLidx2mask, CBLidx2filters)
-
 
 
     def prune_and_eval(model, CBL_idx, CBLidx2mask):
@@ -123,14 +113,12 @@ if __name__ == '__main__':
 
     prune_and_eval(model, CBL_idx, CBLidx2mask)
 
-
     for i in CBLidx2mask:
         CBLidx2mask[i] = CBLidx2mask[i].clone().cpu().numpy()
 
-
-
     pruned_model = prune_model_keep_size2(model, prune_idx, CBL_idx, CBLidx2mask)
-    print("\nnow prune the model but keep size,(actually add offset of BN beta to following layers), let's see how the mAP goes")
+    print(
+        "\nnow prune the model but keep size,(actually add offset of BN beta to following layers), let's see how the mAP goes")
 
     with torch.no_grad():
         eval_model(pruned_model)
@@ -144,14 +132,13 @@ if __name__ == '__main__':
         assert compact_module_defs[idx]['type'] == 'convolutional'
         compact_module_defs[idx]['filters'] = str(CBLidx2filters[idx])
 
-
     compact_model = Darknet([model.hyperparams.copy()] + compact_module_defs, (img_size, img_size)).to(device)
     compact_nparameters = obtain_num_parameters(compact_model)
 
     init_weights_from_loose_model(compact_model, pruned_model, CBL_idx, Conv_idx, CBLidx2mask)
 
-
     random_input = torch.rand((1, 3, img_size, img_size)).to(device)
+
 
     def obtain_avg_forward_time(input, model, repeat=200):
 
@@ -164,15 +151,14 @@ if __name__ == '__main__':
 
         return avg_infer_time, output
 
+
     print('testing inference time...')
     pruned_forward_time, pruned_output = obtain_avg_forward_time(random_input, pruned_model)
     compact_forward_time, compact_output = obtain_avg_forward_time(random_input, compact_model)
 
-
     print('testing the final model...')
     with torch.no_grad():
         compact_model_metric = eval_model(compact_model)
-
 
     metric_table = [
         ["Metric", "Before", "After"],
@@ -181,8 +167,6 @@ if __name__ == '__main__':
         ["Inference", f'{pruned_forward_time:.4f}', f'{compact_forward_time:.4f}']
     ]
     print(AsciiTable(metric_table).table)
-
-
 
     pruned_cfg_name = opt.cfg.replace('/', f'/prune_{opt.global_percent}_keep_{opt.layer_keep}_')
     pruned_cfg_file = write_cfg(pruned_cfg_name, [model.hyperparams.copy()] + compact_module_defs)
@@ -193,4 +177,3 @@ if __name__ == '__main__':
         compact_model_name = compact_model_name.replace('.pt', '.weights')
     save_weights(compact_model, path=compact_model_name)
     print(f'Compact model has been saved: {compact_model_name}')
-

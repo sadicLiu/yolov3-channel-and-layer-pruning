@@ -123,11 +123,11 @@ class Swish(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
 
-    
+
 class Mish(nn.Module):  # https://github.com/digantamisra98/Mish
     def forward(self, x):
         return x.mul(torch.tanh(F.softplus(x)))
-    
+
 
 class YOLOLayer(nn.Module):
     def __init__(self, anchors, nc, img_size, yolo_index, arc):
@@ -411,7 +411,7 @@ def convert(cfg='cfg/yolov3-spp.cfg', weights='weights/yolov3-spp.weights'):
     # Load weights and save
     if weights.endswith('.pt'):  # if PyTorch format
         model.load_state_dict(torch.load(weights, map_location='cpu')['model'])
-        save_weights(model, path='converted.weights', cutoff=-1)
+        save_weights(model, path='weights/converted.weights', cutoff=-1)
         print("Success: converted '%s' to 'converted.weights'" % weights)
 
     elif weights.endswith('.weights'):  # darknet format

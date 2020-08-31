@@ -7,19 +7,21 @@ import shutil
 running_from_path = os.getcwd()
 created_images_dir = 'images'
 created_labels_dir = 'labels'
-data_dir = 'data'   # data_dir为脚本所在的文件夹
+data_dir = 'data'  # data_dir为脚本所在的文件夹
 
-def hms_string(sec_elapsed):    # 格式化显示已消耗时间
+
+def hms_string(sec_elapsed):  # 格式化显示已消耗时间
     h = int(sec_elapsed / (60 * 60))
     m = int((sec_elapsed % (60 * 60)) / 60)
     s = sec_elapsed % 60.
     return "{}:{:>02}:{:>05.2f}".format(h, m, s)
 
-def generate_dir(set_name, root_path):   # 往images和labels文件夹下生成相应的文件夹
+
+def generate_dir(set_name, root_path):  # 往images和labels文件夹下生成相应的文件夹
     images_dir = os.path.join(root_path, 'images')
     annotation_dir = os.path.join(root_path, 'annotations')
 
-    new_images_dir = os.path.join(created_images_dir, set_name)   # 将图片从原来的文件夹复制到该文件夹下
+    new_images_dir = os.path.join(created_images_dir, set_name)  # 将图片从原来的文件夹复制到该文件夹下
     new_annotation_dir = os.path.join(created_labels_dir, set_name)
 
     if not os.path.exists(new_images_dir):
@@ -28,17 +30,17 @@ def generate_dir(set_name, root_path):   # 往images和labels文件夹下生成�
     if not os.path.exists(new_annotation_dir):
         os.makedirs(new_annotation_dir)
 
-    for img in glob.glob(os.path.join(images_dir, "*.jpg")):    # 将图片从原来的文件夹复制到新文件夹下
+    for img in glob.glob(os.path.join(images_dir, "*.jpg")):  # 将图片从原来的文件夹复制到新文件夹下
         shutil.copy(img, new_images_dir)
 
-    os.chdir(annotation_dir)        # 切换到annotation的路径下
+    os.chdir(annotation_dir)  # 切换到annotation的路径下
     matlab_annotations = glob.glob("*.mat")  # 仅仅包含文件名，不包含路径
-    os.chdir(running_from_path)     # 切换回原来的路径
+    os.chdir(running_from_path)  # 切换回原来的路径
 
     for matfile in matlab_annotations:
         filename = matfile.split(".")[0]
 
-        pil_image = Image.open(os.path.join(images_dir, filename+".jpg"))
+        pil_image = Image.open(os.path.join(images_dir, filename + ".jpg"))
 
         content = sio.loadmat(os.path.join(annotation_dir, matfile), matlab_compatible=False)
 
@@ -46,7 +48,7 @@ def generate_dir(set_name, root_path):   # 往images和labels文件夹下生成�
 
         width, height = pil_image.size
 
-        with open(os.path.join(new_annotation_dir, filename+".txt"), "w") as hs:
+        with open(os.path.join(new_annotation_dir, filename + ".txt"), "w") as hs:
             for box_idx, box in enumerate(boxes.T):
                 a = box[0][0][0][0]
                 b = box[0][0][0][1]
@@ -64,9 +66,9 @@ def generate_dir(set_name, root_path):   # 往images和labels文件夹下生成�
                 minY = min(aXY[1], bXY[1], cXY[1], dXY[1])
 
                 # clip,防止超出边界
-                maxX = min(maxX, width-1)
+                maxX = min(maxX, width - 1)
                 minX = max(minX, 0)
-                maxY = min(maxY, height-1)
+                maxY = min(maxY, height - 1)
                 minY = max(minY, 0)
 
                 # (<absolute_x> / <image_width>)
@@ -83,31 +85,33 @@ def generate_dir(set_name, root_path):   # 往images和labels文件夹下生成�
                 if box_idx != 0:
                     hs.write("\n")
 
-                hs.write("0 %f %f %f %f" % (norm_center_x, norm_center_y, norm_width, norm_height)) # 0表示类别
+                hs.write("0 %f %f %f %f" % (norm_center_x, norm_center_y, norm_width, norm_height))  # 0表示类别
+
 
 def create_txt(dirlist, filename):
-    with open(filename, "w") as txtfile:   # 在data文件夹下生成txt文件
+    with open(filename, "w") as txtfile:  # 在data文件夹下生成txt文件
         imglist = []
 
-        for dir in dirlist:     # dir='images/test'
-            imglist.extend(glob.glob(os.path.join(dir, "*.jpg")))   # img='images/test/abc.jpg'
+        for dir in dirlist:  # dir='images/test'
+            imglist.extend(glob.glob(os.path.join(dir, "*.jpg")))  # img='images/test/abc.jpg'
 
         for idx, img in enumerate(imglist):
             if idx != 0:
                 txtfile.write("\n")
-            txtfile.write(os.path.join(data_dir, img))    # 加上前缀data
+            txtfile.write(os.path.join(data_dir, img))  # 加上前缀data
+
 
 if __name__ == '__main__':
     start_time = datetime.datetime.now()
 
-    generate_dir("train", "hand_dataset/training_dataset/training_data")    # 第一个参数表示生成的文件夹的名称
+    generate_dir("train", "hand_dataset/training_dataset/training_data")  # 第一个参数表示生成的文件夹的名称
     generate_dir("test", "hand_dataset/test_dataset/test_data")
     generate_dir("validation", "hand_dataset/validation_dataset/validation_data")
 
-    create_txt((os.path.join(created_images_dir, 'train'),          # 将train和validation文件夹下的图片合并成train
+    create_txt((os.path.join(created_images_dir, 'train'),  # 将train和validation文件夹下的图片合并成train
                 os.path.join(created_images_dir, 'validation')),
                'train.txt')
-    create_txt((os.path.join(created_images_dir, 'test'), ),
+    create_txt((os.path.join(created_images_dir, 'test'),),
                'valid.txt')
 
     end_time = datetime.datetime.now()
