@@ -10,7 +10,6 @@ from utils.datasets import *
 from utils.utils import *
 from utils.prune_utils import *
 
-
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
     from apex import amp
@@ -51,14 +50,14 @@ if f:
 
 def train():
     cfg = opt.cfg
-    t_cfg = opt.t_cfg  #teacher model cfg for knowledge distillation
     data = opt.data
+    t_cfg = opt.t_cfg  # teacher model cfg for knowledge distillation
     img_size = opt.img_size
     epochs = 1 if opt.prebias else opt.epochs  # 500200 batches at bs 64, 117263 images = 273 epochs
     batch_size = opt.batch_size
     accumulate = opt.accumulate  # effective bs = batch_size * accumulate = 16 * 4 = 64
     weights = opt.weights  # initial training weights
-    t_weights = opt.t_weights  #teacher model weights
+    t_weights = opt.t_weights  # teacher model weights
 
     if 'pw' not in opt.arc:  # remove BCELoss positive weights
         hyp['cls_pw'] = 1.
@@ -87,6 +86,7 @@ def train():
     model = Darknet(cfg, (img_size, img_size), arc=opt.arc).to(device)
     if t_cfg:
         t_model = Darknet(t_cfg, (img_size, img_size), arc=opt.arc).to(device)
+    print(model)
 
     # Optimizer
     pg0, pg1 = [], []  # optimizer parameter groups
@@ -143,7 +143,6 @@ def train():
         cutoff = load_darknet_weights(model, weights)
         print('loaded weights from', weights, '\n')
 
-
     if t_cfg:
         if t_weights.endswith('.pt'):
             t_model.load_state_dict(torch.load(t_weights, map_location=device)['model'])
@@ -156,16 +155,14 @@ def train():
         print('<.....................using knowledge distillation.......................>')
         print('teacher model:', t_weights, '\n')
 
-
-    if opt.prune==1:
-        CBL_idx, _, prune_idx, shortcut_idx, _=parse_module_defs2(model.module_defs)
+    if opt.prune == 1:
+        CBL_idx, _, prune_idx, shortcut_idx, _ = parse_module_defs2(model.module_defs)
         if opt.sr:
             print('shortcut sparse training')
-    elif opt.prune==0:
-        CBL_idx, _, prune_idx= parse_module_defs(model.module_defs)
+    elif opt.prune == 0:
+        CBL_idx, _, prune_idx = parse_module_defs(model.module_defs)
         if opt.sr:
             print('normal sparse training ')
-
 
     if opt.transfer or opt.prebias:  # transfer learning edge (yolo) layers
         nf = int(model.module_defs[model.yolo_layers[0] - 1]['filters'])  # yolo layer size (i.e. 255)
@@ -197,7 +194,6 @@ def train():
     #     scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[round(opt.epochs * x) for x in [0.8, 0.9]], gamma=0.1)
     # scheduler.last_epoch = start_epoch - 1
 
-
     def adjust_learning_rate(optimizer, gamma, epoch, iteration, epoch_size):
         """调整学习率进行warm up和学习率衰减
         """
@@ -217,10 +213,6 @@ def train():
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
         return lr
-
-
-
-
 
     # # Plot lr schedule
     # y = []
@@ -285,8 +277,9 @@ def train():
     print('Starting %s for %g epochs...' % ('prebias' if opt.prebias else 'training', epochs))
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
-        #print('learning rate:',optimizer.param_groups[0]['lr'])
-        print(('\n' + '%10s' * 10) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'soft', 'rratio', 'targets', 'img_size'))
+        # print('learning rate:',optimizer.param_groups[0]['lr'])
+        print(('\n' + '%10s' * 10) % (
+            'Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'soft', 'rratio', 'targets', 'img_size'))
 
         # Freeze backbone at epoch 0, unfreeze at epoch 1 (optional)
         freeze_backbone = False
@@ -311,8 +304,7 @@ def train():
             # 调整学习率，进行warm up和学习率衰减
             lr = adjust_learning_rate(optimizer, 0.1, epoch, ni, nb)
             if i == 0:
-                print('learning rate:', lr)
-
+                print('\nlearning rate:', lr)
 
             imgs = imgs.to(device)
             targets = targets.to(device)
@@ -326,7 +318,7 @@ def train():
                     ns = [math.ceil(x * sf / 32.) * 32 for x in imgs.shape[2:]]  # new shape (stretched to 32-multiple)
                     imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
-            #Plot images with bounding boxes
+            # Plot images with bounding boxes
             if ni == 0:
                 fname = 'train_batch%g.jpg' % i
                 plot_images(imgs=imgs, targets=targets, paths=paths, fname=fname)
@@ -354,15 +346,15 @@ def train():
                 return results
 
             soft_target = 0
-            reg_ratio = 0  #表示有多少target的回归是不如老师的，这时学生会跟gt再学习
+            reg_ratio = 0  # 表示有多少target的回归是不如老师的，这时学生会跟gt再学习
             if t_cfg:
                 if mixed_precision:
                     with torch.no_grad():
                         output_t = t_model(imgs)
                 else:
                     _, output_t = t_model(imgs)
-                #soft_target = distillation_loss1(pred, output_t, model.nc, imgs.size(0))
-                #这里把蒸馏策略改为了二，想换回一的可以注释掉loss2，把loss1取消注释
+                # soft_target = distillation_loss1(pred, output_t, model.nc, imgs.size(0))
+                # 这里把蒸馏策略改为了二，想换回一的可以注释掉loss2，把loss1取消注释
                 soft_target, reg_ratio = distillation_loss2(model, targets, pred, output_t)
                 loss += soft_target
 
@@ -375,7 +367,7 @@ def train():
                     scaled_loss.backward()
             else:
                 loss.backward()
-                
+
             idx2mask = None
             # if opt.sr and opt.prune==1 and epoch > opt.epochs * 0.5:
             #     idx2mask = get_mask2(model, prune_idx, 0.85)
@@ -399,7 +391,6 @@ def train():
 
         # Update scheduler
         # scheduler.step()
-
 
         # Process epoch results
         final_epoch = epoch + 1 == epochs
@@ -425,7 +416,8 @@ def train():
         if tb_writer:
             x = list(mloss) + list(results) + [msoft_target]
             titles = ['GIoU', 'Objectness', 'Classification', 'Train loss',
-                      'Precision', 'Recall', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification', 'soft_loss']
+                      'Precision', 'Recall', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification',
+                      'soft_loss']
             for xi, title in zip(x, titles):
                 tb_writer.add_scalar(title, xi, epoch)
             bn_weights = gather_bn_weights(model.module_list, prune_idx)
@@ -462,10 +454,9 @@ def train():
                 torch.save(chkpt, wdir + 'backup%g.pt' % epoch)
 
             # Delete checkpoint
-            del chkpt            
+            del chkpt
 
-
-        # end epoch ----------------------------------------------------------------------------------------------------
+            # end epoch ----------------------------------------------------------------------------------------------------
 
     for idx in prune_idx:
         bn_weights = gather_bn_weights(model.module_list, [idx])
@@ -495,9 +486,10 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=273)  # 500200 batches at bs 16, 117263 images = 273 epochs
     parser.add_argument('--batch-size', type=int, default=16)  # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate', type=int, default=2, help='batches to accumulate before optimizing')
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='cfg file path')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-warship-quant-large-anchors.cfg',
+                        help='cfg file path')
     parser.add_argument('--t_cfg', type=str, default='', help='teacher model cfg file path for knowledge distillation')
-    parser.add_argument('--data', type=str, default='data/coco.data', help='*.data file path')
+    parser.add_argument('--data', type=str, default='data/warship.data', help='*.data file path')
     parser.add_argument('--multi-scale', action='store_true', help='adjust (67% - 150%) img_size every 10 batches')
     parser.add_argument('--img_size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
@@ -509,7 +501,8 @@ if __name__ == '__main__':
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--img-weights', action='store_true', help='select training images by weight')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', type=str, default='', help='initial weights')  # i.e. weights/darknet.53.conv.74
+    parser.add_argument('--weights', type=str, default='weights/last-16,16_16.weights',
+                        help='initial weights')  # i.e. weights/darknet.53.conv.74
     parser.add_argument('--t_weights', type=str, default='', help='teacher model weights')
     parser.add_argument('--arc', type=str, default='defaultpw', help='yolo architecture')  # defaultpw, uCE, uBCE
     parser.add_argument('--prebias', action='store_true', help='transfer-learn yolo biases prior to training')
@@ -521,8 +514,7 @@ if __name__ == '__main__':
                         help='train with channel sparsity regularization')
     parser.add_argument('--s', type=float, default=0.001, help='scale sparse rate')
     parser.add_argument('--prune', type=int, default=1, help='0:nomal prune 1:other prune ')
-    
-    
+
     opt = parser.parse_args()
     opt.weights = last if opt.resume else opt.weights
     print(opt)
@@ -531,7 +523,7 @@ if __name__ == '__main__':
     tb_writer = None
     if not opt.evolve:  # Train normally
         # try:
-            # Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/
+        # Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/
         from torch.utils.tensorboard import SummaryWriter
 
         tb_writer = SummaryWriter()

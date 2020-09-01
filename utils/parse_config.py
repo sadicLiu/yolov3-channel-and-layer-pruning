@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+
 def parse_model_cfg(path):
     # Parses the yolo-v3 layer configuration file and returns module definitions
     file = open(path, 'r')
@@ -12,7 +13,8 @@ def parse_model_cfg(path):
         if line.startswith('['):  # This marks the start of a new block
             mdefs.append({})
             mdefs[-1]['type'] = line[1:-1].rstrip()
-            if mdefs[-1]['type'] == 'convolutional':
+            conv_types = ['convolutional', 'quant-convolutional']
+            if mdefs[-1]['type'] in conv_types:
                 mdefs[-1]['batch_normalize'] = 0  # pre-populate with zeros (may be overwritten later)
         else:
             key, val = line.split("=")
@@ -40,4 +42,3 @@ def parse_data_cfg(path):
         options[key.strip()] = val.strip()
 
     return options
-

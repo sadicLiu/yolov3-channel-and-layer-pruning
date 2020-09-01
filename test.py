@@ -26,6 +26,7 @@ def test(cfg,
 
         # Initialize model
         model = Darknet(cfg, img_size).to(device)
+        print(model)
 
         # Load weights
         attempt_download(weights)
@@ -197,9 +198,9 @@ def test(cfg,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='cfg file path')
-    parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3-spp.weights', help='path to weights file')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-warship-quant-large-anchors.cfg', help='cfg file path')
+    parser.add_argument('--data', type=str, default='data/warship.data', help='coco.data file path')
+    parser.add_argument('--weights', type=str, default='weights/last-16,16_16.pt', help='path to weights file')
     parser.add_argument('--batch-size', type=int, default=16, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='iou threshold required to qualify as detected')

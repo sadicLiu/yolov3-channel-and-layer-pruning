@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from utils.google_utils import *
 from utils.parse_config import *
 from utils.utils import *
+from quantization import QConv2d, QLeakyReLu
 
 ONNX_EXPORT = False
 
@@ -38,6 +39,27 @@ def create_modules(module_defs, img_size, arc):
                 # modules.add_module('activation', Swish())
             elif mdef['activation'] == 'mish':
                 modules.add_module('activation', Mish())
+
+        elif mdef['type'] == 'quant-convolutional':
+            bn = int(mdef['batch_normalize'])
+            filters = int(mdef['filters'])
+            kernel_size = int(mdef['size'])
+            pad = (kernel_size - 1) // 2 if int(mdef['pad']) else 0
+            stride = int(mdef['stride']) if 'stride' in mdef else (mdef['stride_y'], mdef['stride_x'])
+            modules.add_module('Conv2d', QConv2d(in_channels=output_filters[-1],
+                                                 out_channels=filters,
+                                                 kernel_size=kernel_size,
+                                                 stride=stride,
+                                                 padding=pad,
+                                                 groups=int(mdef['groups']) if 'groups' in mdef else 1,
+                                                 bias=not bn))
+            if bn:
+                modules.add_module('BatchNorm2d', nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4))
+            else:
+                routs.append(i)  # detection output (goes into yolo layer)
+
+            if mdef['activation'] == 'leaky':  # activation study https://github.com/ultralytics/yolov3/issues/441
+                modules.add_module('activation', QLeakyReLu())
 
         elif mdef['type'] == 'maxpool':
             kernel_size = int(mdef['size'])
@@ -234,14 +256,14 @@ class Darknet(nn.Module):
 
         for i, (mdef, module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
-            if mtype in ['convolutional', 'upsample', 'maxpool']:
+            if mtype in ['convolutional', 'quant-convolutional', 'upsample', 'maxpool']:
                 x = module(x)
             elif mtype == 'route':
                 layers = [int(x) for x in mdef['layers'].split(',')]
                 if len(layers) == 1:
                     x = layer_outputs[layers[0]]
                     if 'groups' in mdef:
-                        x = x[:, (x.shape[1]//2):]
+                        x = x[:, (x.shape[1] // 2):]
                 else:
                     try:
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
@@ -326,7 +348,7 @@ def load_darknet_weights(self, weights, cutoff=-1):
 
     ptr = 0
     for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
-        if mdef['type'] == 'convolutional':
+        if mdef['type'] == 'convolutional' or mdef['type'] == 'quant-convolutional':
             conv_layer = module[0]
             if mdef['batch_normalize']:
                 # Load BN bias, weights, running mean and running variance
@@ -354,11 +376,13 @@ def load_darknet_weights(self, weights, cutoff=-1):
                 conv_layer.weight.data.copy_(conv_w)
                 ptr += num_w
             else:
-                if os.path.basename(file) == 'yolov3.weights' or os.path.basename(file) == 'yolov3-tiny.weights' or os.path.basename(file) == 'yolov3-spp.weights' or os.path.basename(file) == 'yolov4.weights':
-                    #加载权重'yolov3.weights' 或者 'yolov3-tiny-weights.' 是为了更好初始化自己模型权重，要避免同名
+                if os.path.basename(file) == 'yolov3.weights' or os.path.basename(
+                        file) == 'yolov3-tiny.weights' or os.path.basename(
+                    file) == 'yolov3-spp.weights' or os.path.basename(file) == 'yolov4.weights':
+                    # 加载权重'yolov3.weights' 或者 'yolov3-tiny-weights.' 是为了更好初始化自己模型权重，要避免同名
                     num_b = 255
                     ptr += num_b
-                    num_w = int(self.module_defs[i-1]["filters"]) * 255
+                    num_w = int(self.module_defs[i - 1]["filters"]) * 255
                     ptr += num_w
                 else:
                     # Load conv. bias
@@ -385,7 +409,7 @@ def save_weights(self, path='model.weights', cutoff=-1):
 
         # Iterate through layers
         for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
-            if mdef['type'] == 'convolutional':
+            if mdef['type'] == 'convolutional' or mdef['type'] == 'quant-convolutional':
                 conv_layer = module[0]
                 # If batch norm, load bn first
                 if mdef['batch_normalize']:
