@@ -10,3 +10,5 @@ runs/
 
 results.*
 *batch*.jpg
+
+*.shapes
