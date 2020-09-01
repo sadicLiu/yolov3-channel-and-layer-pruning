@@ -7,7 +7,7 @@
 转换为darknet weights去除掉epoch信息, 使用darknet weights从epoch 0开始稀疏训练
 4. 稀疏训练
    ```
-   python train.py --cfg cfg/yolov3-tiny-warship-large-anchors.cfg --data data/warship.data --weights weights/last-fp32-large-anchors.weights --epochs 300 --batch-size 32 -sr --s 0.001 --prune 1
+   python train.py --cfg cfg/yolov3-tiny-warship-quant-large-anchors.cfg --data data/warship.data --weights weights/last-16,16_16.weights --epochs 300 --batch-size 32 -sr --s 0.001 --prune 1
    ```
 5. 稀疏训练有3种策略, 默认的是network slimming论文里的策略, 具体参考README
 
@@ -21,12 +21,12 @@
 ## step3: finetune
 1. 若需要对通道剪枝后的模型进行微调, 使用如下命令
    ```
-   python train.py --cfg cfg/prune_0.85_my_cfg.cfg --data data/my_data.data --weights weights/prune_0.85_last.weights --epochs 100 --batch-size 32
+   python train.py --cfg cfg/prune_0.5_keep_0.25_yolov3-tiny-warship-large-anchors.cfg --data data/warship.data --weights weights/prune_0.5_keep_0.25_last.weights --epochs 100 --batch-size 32
    ```
 
 ## Commands
 
 - Pytorch转Darknet
   ```
-  python -c "from models import *; convert('cfg/yolov3-tiny-warship-large-anchors.cfg', 'weights/last-fp32-large-anchors.pt')"
+  python -c "from models import *; convert('cfg/yolov3-tiny-warship-quant-large-anchors.cfg', 'weights/last-16,16_16.pt')"
   ```
