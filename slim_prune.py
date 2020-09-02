@@ -1,3 +1,4 @@
+"""用于yolov3-tiny剪枝"""
 import argparse
 import time
 
@@ -7,11 +8,12 @@ from utils.prune_utils import *
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-warship-large-anchors.cfg', help='cfg file path')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-warship-quant-large-anchors.cfg',
+                        help='cfg file path')
     parser.add_argument('--data', type=str, default='data/warship.data', help='*.data file path')
-    parser.add_argument('--weights', type=str, default='weights/last.pt', help='sparse model weights')
-    parser.add_argument('--global_percent', type=float, default=0.5, help='global channel prune percent')
-    parser.add_argument('--layer_keep', type=float, default=0.25, help='channel keep percent per layer')
+    parser.add_argument('--weights', type=str, default='weights/last-16,16_16-sr.pt', help='sparse model weights')
+    parser.add_argument('--global_percent', type=float, default=0.65, help='global channel prune percent')
+    parser.add_argument('--layer_keep', type=float, default=0.1, help='channel keep percent per layer')
     parser.add_argument('--img_size', type=int, default=416, help='inference size (pixels)')
     opt = parser.parse_args()
     print(opt)
@@ -34,11 +36,11 @@ if __name__ == '__main__':
         origin_model_metric = eval_model(model)
     origin_nparameters = obtain_num_parameters(model)
 
+    # 获取待剪枝层的id以及每个通道对应的BN层gamma参数
     CBL_idx, Conv_idx, prune_idx, _, _ = parse_module_defs2(model.module_defs)
-
     bn_weights = gather_bn_weights(model.module_list, prune_idx)
 
-    sorted_bn = torch.sort(bn_weights)[0]
+    # 从小到大排序, 获取剪枝所用的阈值
     sorted_bn, sorted_index = torch.sort(bn_weights)
     thresh_index = int(len(bn_weights) * opt.global_percent)
     thresh = sorted_bn[thresh_index].cuda()
@@ -46,9 +48,11 @@ if __name__ == '__main__':
     print(f'Global Threshold should be less than {thresh:.4f}.')
 
 
-    # %%
     def obtain_filters_mask(model, thre, CBL_idx, prune_idx):
-
+        """
+            CBL_idx: Conv-BN结构中, conv在model中的idx
+            prune_idx: 待剪枝层的idx
+        """
         pruned = 0
         total = 0
         num_filters = []
@@ -56,13 +60,13 @@ if __name__ == '__main__':
         for idx in CBL_idx:
             bn_module = model.module_list[idx][1]
             if idx in prune_idx:
-
                 weight_copy = bn_module.weight.data.abs().clone()
 
-                channels = weight_copy.shape[0]  #
+                channels = weight_copy.shape[0]
                 min_channel_num = int(channels * opt.layer_keep) if int(channels * opt.layer_keep) > 0 else 1
                 mask = weight_copy.gt(thresh).float()
 
+                # 卷积层中剩余的通道数要满足layer_keep要求
                 if int(torch.sum(mask)) < min_channel_num:
                     _, sorted_index_weights = torch.sort(weight_copy, descending=True)
                     mask[sorted_index_weights[:min_channel_num]] = 1.
@@ -85,6 +89,8 @@ if __name__ == '__main__':
         return num_filters, filters_mask
 
 
+    # num_filters: 每个待剪枝的BN层最终剩余的通道数
+    # filters_mask: 每个待剪枝的BN层的掩码, 待剪通道位置是0, 保留通道位置是1
     num_filters, filters_mask = obtain_filters_mask(model, thresh, CBL_idx, prune_idx)
     CBLidx2mask = {idx: mask for idx, mask in zip(CBL_idx, filters_mask)}
     CBLidx2filters = {idx: filters for idx, filters in zip(CBL_idx, num_filters)}
@@ -94,12 +100,12 @@ if __name__ == '__main__':
             i['is_access'] = False
 
     print('merge the mask of layers connected to shortcut!')
-    merge_mask(model, CBLidx2mask, CBLidx2filters)
+    merge_mask(model, CBLidx2mask, CBLidx2filters)  # TODO: 与shortcut有关, 暂时不管
 
 
     def prune_and_eval(model, CBL_idx, CBLidx2mask):
+        # 这里没有进行真正的剪枝, 只是把待剪通道置零(深拷贝的模型, 不影响原模型), 确认剪枝效果
         model_copy = deepcopy(model)
-
         for idx in CBL_idx:
             bn_module = model_copy.module_list[idx][1]
             mask = CBLidx2mask[idx].cuda()
@@ -129,7 +135,8 @@ if __name__ == '__main__':
 
     compact_module_defs = deepcopy(model.module_defs)
     for idx in CBL_idx:
-        assert compact_module_defs[idx]['type'] == 'convolutional'
+        conv_types = ['convolutional', 'quant-convolutional']
+        assert compact_module_defs[idx]['type'] in conv_types
         compact_module_defs[idx]['filters'] = str(CBLidx2filters[idx])
 
     compact_model = Darknet([model.hyperparams.copy()] + compact_module_defs, (img_size, img_size)).to(device)

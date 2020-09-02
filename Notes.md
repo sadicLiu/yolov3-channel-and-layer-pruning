@@ -21,7 +21,7 @@
 ## step3: finetune
 1. 若需要对通道剪枝后的模型进行微调, 使用如下命令
    ```
-   python train.py --cfg cfg/prune_0.8_keep_0.01_yolov3-tiny-warship-quant-large-anchors.cfg --data data/warship.data --weights weights/prune_0.8_keep_0.01_last-16,16_16-sr.weights --epochs 100 --batch-size 32
+   python train.py --cfg cfg/prune_0.5_keep_0.01_yolov3-tiny-warship-quant-large-anchors.cfg --data data/warship.data --weights weights/prune_0.5_keep_0.01_last-16,16_16-sr.weights --epochs 100 --batch-size 32
    ```
 2. 微调时加入知识蒸馏
    ```

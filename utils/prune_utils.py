@@ -44,13 +44,14 @@ def parse_module_defs(module_defs):
 
 
 def parse_module_defs2(module_defs):
-    CBL_idx = []
-    Conv_idx = []
+    CBL_idx = []  # 这里存储Conv-BN结构的Conv_id
+    Conv_idx = []  # 这里存储没有BN的Conv_id
     shortcut_idx = dict()
     shortcut_all = set()
     ignore_idx = set()
+    conv_types = ['convolutional', 'quant-convolutional']
     for i, module_def in enumerate(module_defs):
-        if module_def['type'] == 'convolutional' or module_def['type'] == 'quant-convolutional':
+        if module_def['type'] in conv_types:
             if module_def['batch_normalize'] == '1':
                 CBL_idx.append(i)
             else:
@@ -101,6 +102,7 @@ def parse_module_defs4(module_defs):
 
 
 def gather_bn_weights(module_list, prune_idx):
+    # 将所有待剪卷积层的BN gamma参数的绝对值保存到一个tensor中
     size_list = [module_list[idx][1].weight.data.shape[0] for idx in prune_idx]
 
     bn_weights = torch.zeros(sum(size_list))
@@ -163,7 +165,8 @@ def get_input_mask(module_defs, idx, CBLidx2mask):
     if idx == 0:
         return np.ones(3)
 
-    if module_defs[idx - 1]['type'] == 'convolutional':
+    conv_types = ['convolutional', 'quant-convolutional']
+    if module_defs[idx - 1]['type'] in conv_types:
         return CBLidx2mask[idx - 1]
     elif module_defs[idx - 1]['type'] == 'shortcut':
         return CBLidx2mask[idx - 2]
@@ -185,9 +188,9 @@ def get_input_mask(module_defs, idx, CBLidx2mask):
             # return np.concatenate([CBLidx2mask[in_idx - 1] for in_idx in route_in_idxs])
             if module_defs[route_in_idxs[0]]['type'] == 'upsample':
                 mask1 = CBLidx2mask[route_in_idxs[0] - 1]
-            elif module_defs[route_in_idxs[0]]['type'] == 'convolutional':
+            elif module_defs[route_in_idxs[0]]['type'] in conv_types:
                 mask1 = CBLidx2mask[route_in_idxs[0]]
-            if module_defs[route_in_idxs[1]]['type'] == 'convolutional':
+            if module_defs[route_in_idxs[1]]['type'] in conv_types:
                 mask2 = CBLidx2mask[route_in_idxs[1]]
             else:
                 mask2 = CBLidx2mask[route_in_idxs[1] - 1]
@@ -209,6 +212,11 @@ def get_input_mask(module_defs, idx, CBLidx2mask):
 
 
 def init_weights_from_loose_model(compact_model, loose_model, CBL_idx, Conv_idx, CBLidx2mask):
+    """
+    @param CBL_idx: conv-bn结构的卷积层索引值
+    @param Conv_idx: 没有bn的卷积层索引值
+    """
+
     for idx in CBL_idx:
         compact_CBL = compact_model.module_list[idx]
         loose_CBL = loose_model.module_list[idx]
@@ -276,8 +284,10 @@ def obtain_bn_mask(bn_module, thre):
 
 
 def update_activation(i, pruned_model, activation, CBL_idx):
+    # 在v3-tiny中, 如果当前层是maxpool, route, conv并且后一层是conv, 则会进行处理
+    conv_types = ['convolutional', 'quant-convolutional']
     next_idx = i + 1
-    if pruned_model.module_defs[next_idx]['type'] == 'convolutional':
+    if pruned_model.module_defs[next_idx]['type'] in conv_types:
         next_conv = pruned_model.module_list[next_idx][0]
         conv_sum = next_conv.weight.data.sum(dim=(2, 3))
         offset = conv_sum.matmul(activation.reshape(-1, 1)).reshape(-1)
@@ -289,18 +299,24 @@ def update_activation(i, pruned_model, activation, CBL_idx):
 
 
 def prune_model_keep_size2(model, prune_idx, CBL_idx, CBLidx2mask):
+    """
+    @param prune_idx: 待剪枝的卷积层索引
+    @param CBL_idx: Conv-BN结构的卷积层索引
+    @param CBLidx2mask: 卷积层对应的剪枝mask
+    """
     pruned_model = deepcopy(model)
     activations = []
     for i, model_def in enumerate(model.module_defs):
 
-        if model_def['type'] == 'convolutional':
+        conv_types = ['convolutional', 'quant-convolutional']
+        if model_def['type'] in conv_types:
             activation = torch.zeros(int(model_def['filters'])).cuda()
             if i in prune_idx:
                 mask = torch.from_numpy(CBLidx2mask[i]).cuda()
                 bn_module = pruned_model.module_list[i][1]
                 bn_module.weight.data.mul_(mask)
                 if model_def['activation'] == 'leaky':
-                    activation = F.leaky_relu((1 - mask) * bn_module.bias.data, 0.1)
+                    activation = F.leaky_relu((1 - mask) * bn_module.bias.data, 0.125)  # we use 0.125 as slop
                 elif model_def['activation'] == 'mish':
                     activation = (1 - mask) * bn_module.bias.data.mul(F.softplus(bn_module.bias.data).tanh())
                 update_activation(i, pruned_model, activation, CBL_idx)
@@ -314,8 +330,6 @@ def prune_model_keep_size2(model, prune_idx, CBL_idx, CBLidx2mask):
             activation = actv1 + actv2
             update_activation(i, pruned_model, activation, CBL_idx)
             activations.append(activation)
-
-
 
         elif model_def['type'] == 'route':
             # spp不参与剪枝，其中的route不用更新，仅占位
@@ -395,6 +409,8 @@ def get_mask2(model, prune_idx, percent):
 
 
 def merge_mask(model, CBLidx2mask, CBLidx2filters):
+    conv_types = ['convolutional', 'quant-convolutional']
+
     for i in range(len(model.module_defs) - 1, -1, -1):
         mtype = model.module_defs[i]['type']
         if mtype == 'shortcut':
@@ -406,7 +422,7 @@ def merge_mask(model, CBLidx2mask, CBLidx2filters):
             while mtype == 'shortcut':
                 model.module_defs[layer_i]['is_access'] = True
 
-                if model.module_defs[layer_i - 1]['type'] == 'convolutional':
+                if model.module_defs[layer_i - 1]['type'] in conv_types:
                     bn = int(model.module_defs[layer_i - 1]['batch_normalize'])
                     if bn:
                         Merge_masks.append(CBLidx2mask[layer_i - 1].unsqueeze(0))
@@ -414,7 +430,7 @@ def merge_mask(model, CBLidx2mask, CBLidx2filters):
                 layer_i = int(model.module_defs[layer_i]['from']) + layer_i
                 mtype = model.module_defs[layer_i]['type']
 
-                if mtype == 'convolutional':
+                if mtype in conv_types:
                     bn = int(model.module_defs[layer_i]['batch_normalize'])
                     if bn:
                         Merge_masks.append(CBLidx2mask[layer_i].unsqueeze(0))
@@ -429,7 +445,7 @@ def merge_mask(model, CBLidx2mask, CBLidx2filters):
             mtype = 'shortcut'
             while mtype == 'shortcut':
 
-                if model.module_defs[layer_i - 1]['type'] == 'convolutional':
+                if model.module_defs[layer_i - 1]['type'] in conv_types:
                     bn = int(model.module_defs[layer_i - 1]['batch_normalize'])
                     if bn:
                         CBLidx2mask[layer_i - 1] = merge_mask
@@ -438,7 +454,7 @@ def merge_mask(model, CBLidx2mask, CBLidx2filters):
                 layer_i = int(model.module_defs[layer_i]['from']) + layer_i
                 mtype = model.module_defs[layer_i]['type']
 
-                if mtype == 'convolutional':
+                if mtype in conv_types:
                     bn = int(model.module_defs[layer_i]['batch_normalize'])
                     if bn:
                         CBLidx2mask[layer_i] = merge_mask
