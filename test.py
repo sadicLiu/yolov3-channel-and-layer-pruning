@@ -198,13 +198,13 @@ def test(cfg,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-warship-large-anchors.cfg', help='cfg file path')
+    parser.add_argument('--cfg', type=str, default='cfg/prune_0.2_keep_0.1_yolov3-tiny-1branch-256-quant-thick.cfg', help='cfg file path')
     parser.add_argument('--data', type=str, default='data/warship.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/last-fp32-large-anchors.pt', help='path to weights file')
+    parser.add_argument('--weights', type=str, default='weights/last-pruned-0.2_0.1-16bit-1branch-256input-256div.pt', help='path to weights file')
     parser.add_argument('--batch-size', type=int, default=16, help='size of each image batch')
-    parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
+    parser.add_argument('--img-size', type=int, default=256, help='inference size (pixels)')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='iou threshold required to qualify as detected')
-    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.1, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
     parser.add_argument('--save-json', action='store_true', help='save a cocoapi-compatible JSON results file')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')

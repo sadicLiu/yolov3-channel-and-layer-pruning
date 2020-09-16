@@ -401,7 +401,7 @@ def load_darknet_weights(self, weights, cutoff=-1):
 
 def save_weights(self, path='model.weights', cutoff=-1):
     # Converts a PyTorch model to Darket format (*.pt to *.weights)
-    # Note: Does not work if model.fuse() is applied
+    # Note: Does not work if model.fuse() is applietrainval.txtd
     with open(path, 'wb') as f:
         # Write Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
         self.version.tofile(f)  # (int32) version info: major, minor, revision

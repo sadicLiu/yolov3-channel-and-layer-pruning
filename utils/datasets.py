@@ -104,7 +104,8 @@ class LoadImages:  # for inference
         # Normalize RGB
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB
         img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        # img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        img /= 256.0  # fixme
 
         # cv2.imwrite(path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
         return path, img, img0, self.cap
@@ -177,7 +178,8 @@ class LoadWebcam:  # for inference
         # Normalize RGB
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB
         img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        # img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        img /= 256.0  # fixme
 
         return img_path, img, img0, None
 
@@ -246,7 +248,8 @@ class LoadStreams:  # multiple IP or RTSP cameras
         # Normalize RGB
         img = img[:, :, :, ::-1].transpose(0, 3, 1, 2)  # BGR to RGB
         img = np.ascontiguousarray(img, dtype=np.float16 if self.half else np.float32)  # uint8 to fp16/fp32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        # img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        img /= 256.0  # fixme
 
         return self.sources, img, img0, None
 
@@ -488,7 +491,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Normalize
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img, dtype=np.float32)  # uint8 to float32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        # img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        img /= 256.0  # fixme
 
         return torch.from_numpy(img), labels_out, img_path, (h, w)
 

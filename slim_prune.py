@@ -8,13 +8,13 @@ from utils.prune_utils import *
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-warship-quant-large-anchors.cfg',
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-tiny-1branch-256-quant-thick.cfg',
                         help='cfg file path')
     parser.add_argument('--data', type=str, default='data/warship.data', help='*.data file path')
-    parser.add_argument('--weights', type=str, default='weights/last-16,16_16-sr.pt', help='sparse model weights')
-    parser.add_argument('--global_percent', type=float, default=0.65, help='global channel prune percent')
+    parser.add_argument('--weights', type=str, default='weights/last-16bit-256i-256d-1branch-256c-sr.pt', help='sparse model weights')
+    parser.add_argument('--global_percent', type=float, default=0.2, help='global channel prune percent')
     parser.add_argument('--layer_keep', type=float, default=0.1, help='channel keep percent per layer')
-    parser.add_argument('--img_size', type=int, default=416, help='inference size (pixels)')
+    parser.add_argument('--img_size', type=int, default=256, help='inference size (pixels)')
     opt = parser.parse_args()
     print(opt)
 
